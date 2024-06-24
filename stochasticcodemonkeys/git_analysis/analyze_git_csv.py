@@ -1,20 +1,11 @@
 import glob
-import json
 import math
-import mimetypes
 import os
 import sys
 from collections import namedtuple
-from datetime import datetime, timedelta
-
+from datetime import datetime
 import pandas as pd
-import matplotlib.pyplot as plt
 
-#from .DateHistogram import DateHistogram
-#from .Histogram import Histogram
-#from .StackedHistogram import StackedHistogram
-#from .StackedDateHistogram import StackedDateHistogram
-#from .TopX import TopX
 
 FileInfo = namedtuple("FileInfo", "file commits complexity age score")
 
@@ -22,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def read_git_log_csv(filename):
     df = pd.read_csv(filename)
-    df["file_abbr"] = df["file"].map(lambda a: abbreviate_filename(a))
+    df["file_abbr"] = df["file"].map(abbreviate_filename)
     without_github_user = df[df["author"] != "GitHub"]
-    nans_removed = without_github_user.fillna("", inplace=True)
+    without_github_user.fillna("", inplace=True)
     return without_github_user
 
 
@@ -80,7 +71,7 @@ def determine_hotspot_data(
     file_commits, file_complexities, commit_ages, score_func=None
 ):
     SIX_MONTHS = 180
-    if score_func == None:
+    if score_func is None:
         score_func = (
             lambda cm, cp, a: cm * cp if a < SIX_MONTHS else math.log(cm * cp, a)
         )
@@ -108,7 +99,7 @@ def determine_hotspot_data(
                 )
                 results.append(new_file)
     normalized_results = []
-    for count, file in enumerate(results):
+    for file in results:
         new_score = round((file.score / max_score) * 100, 1)
         normalized_score = FileInfo(
             file=file.file,
@@ -121,30 +112,9 @@ def determine_hotspot_data(
     return normalized_results
 
 
-def get_top_hotspots(hotspots, topn=10):
-    top_list = TopX(topn)
-    for hotspot in hotspots:
-        file = hotspot.file
-        score = hotspot.score
-        top_list.add((score, hotspot))
-    hotspot_array = [i[1] for i in top_list.values]
-    return hotspot_array
-
-
-def format_hotspot_for_print(hotspots):
-    top_hotspots = get_top_hotspots(hotspots, 10)
-    text = "\n🔥 Hotspots \nCommits  Comp.   Age    Score  File\n"
-    for hotspot in top_hotspots:
-        text = (
-            text
-            + f"{hotspot.commits:>5} {hotspot.complexity:>8} {hotspot.age:>5} {hotspot.score:>8}  {hotspot.file:}\n"
-        )
-    text = text + "\n"
-    return text
-
 
 def write_csv_result(repo_name, file_info):
-    with open(f"output/{repo_name}_git_analysis_result.csv", "w") as results_file:
+    with open(f"output/{repo_name}_git_analysis_result.csv", "w", encoding="utf-8") as results_file:
         results_file.write("commits,complexity,file,score\n")
         for file in file_info:
             results_file.write(
@@ -166,188 +136,11 @@ def is_code_file(path):
         ".xml",
         ".scss",
     ]
-    filename, file_extension = os.path.splitext(path)
+    _, file_extension = os.path.splitext(path)
     if file_extension in exclude_extensions:
         return False
     return True
 
-
-def create_charts(df, repo_name, hotspots):
-    df["two_dirs"] = df["dir_1"] + "/" + df["dir_2"]
-    df["datetime"] = pd.to_datetime(df["date"], format="%Y-%m-%d")
-    df["month"] = df["datetime"].dt.to_period("M")
-
-    create_single_histogram("author", "commit_hash", "unique_count", df)
-    create_single_histogram("author", "churn_count", "sum", df)
-    create_single_histogram("two_dirs", "commit_hash", "unique_count", df)
-    create_single_histogram("file_abbr", "commit_hash", "unique_count", df)
-    create_single_stackeddatehistogram("month", "author", df)
-    create_single_stackeddatehistogram("month", "two_dirs", df)
-    create_single_datehistogram("month", "author", "unique_count", df)
-    create_single_datehistogram("month", "commit_hash", "unique_count", df)
-
-    last_month = datetime.now() - timedelta(days=30)
-    last_30_days = df[df["datetime"] >= last_month]
-    try:
-        create_single_stackeddatehistogram(
-            "datetime", "author", last_30_days, "_30_days"
-        )
-        create_single_stackeddatehistogram(
-            "datetime", "two_dirs", last_30_days, "_30_days"
-        )
-    except TypeError as e:
-        if str(e) != "no numeric data to plot":
-            raise e
-    create_bus_factor_chart(df, hotspots)
-
-
-def create_single_histogram(field, value_field, aggregation, df, filename_suffix=""):
-    histogram = Histogram(field, value_field, df)
-    histogram.set_chart_type("barh")
-    histogram.set_aggregation(aggregation)
-    histogram.set_max_groupings(10)
-    histogram.save_plot(
-        f"output/git_histogram_{field}_{value_field}_{aggregation}{filename_suffix}.png"
-    )
-    # Output the data used in the chart as a CSV
-    data = histogram.to_json()
-    f = open(f"output/git_histogram_{field}_{value_field}_{aggregation}{filename_suffix}.json", "w")    
-    f.write(json.dumps(data))
-    f.close()
-    
-
-def create_single_datehistogram(
-    date_field, value_field, aggregation, df, filename_suffix=""
-):
-    histogram = DateHistogram(date_field, value_field, df)
-    histogram.set_chart_type("bar")
-    histogram.set_aggregation(aggregation)
-    histogram.save_plot(
-        f"output/git_datehistogram_{value_field}_{aggregation}{filename_suffix}.png"
-    )
-
-
-def create_single_stackeddatehistogram(
-    date_grouping_field, grouping_field, df, filename_suffix=""
-):
-    histogram = StackedDateHistogram(
-        date_grouping_field, grouping_field, "commit_hash", df
-    )
-    histogram.set_chart_type("area")
-    histogram.set_aggregation("unique_count")
-    histogram.set_max_groupings(5)
-    histogram.save_plot(
-        f"output/git_datehistogram_{grouping_field}{filename_suffix}.png"
-    )
-
-
-def create_bus_factor_chart(df, hotspots):
-    top_hotspots = get_top_hotspots(hotspots)
-    hotspot_files = [f.file for f in top_hotspots]
-    hotspot_commit_df = df[df["file"].isin(hotspot_files)]
-    without_github_user = hotspot_commit_df[hotspot_commit_df["author"] != "GitHub"]
-    recent_date = datetime.now() - timedelta(days=365)
-    recent_data = without_github_user[without_github_user["datetime"] >= recent_date]
-
-    hotspot_unique_author_counts = Histogram("file_abbr", "author", recent_data)
-    hotspot_unique_author_counts.set_aggregation("unique_count")
-    hotspot_unique_author_counts.set_chart_type("barh")
-    hotspot_unique_author_counts.set_max_groupings(10)
-    hotspot_unique_author_counts.save_plot("output/git_histogram_bus_factor.png")
-
-    bus_factor_text = ""
-    for file in recent_data["file_abbr"].unique():
-        unique_authors = recent_data[recent_data["file_abbr"] == file][
-            "author"
-        ].unique()
-        if len(unique_authors) == 1:
-            bus_factor_text = bus_factor_text + f"{file:<50} - {unique_authors[0]}\n"
-    if bus_factor_text != "":
-        print("\n🚌 Hotspots with a high bus factor:")
-        print(bus_factor_text)
-
-
-def create_html_file(csv_file, print_text):
-    html = f"""<html>
-    <head>
-        <title>Git Analysis - {csv_file}</title>
-        <style>
-            h1 {{color: darkblue}}
-            h2 {{color: #507786}}
-            h3 {{color: #539DC2}}
-        </style>
-    </head>
-    <body>
-        <h1>Git Analysis for: {csv_file}</h1>
-
-        <h2>Total Commits</h2>
-        Shows total commits over time <br/>
-        <br/>
-            <img src="git_datehistogram_commit_hash_unique_count.png"></img><br/>
-        <hr/>
-
-        <h2>Unique Authors</h2>
-        Shows the number of unique authors making commits per month <br/>
-        <br/>
-            <img src="git_datehistogram_author_unique_count.png"></img><br/>
-        <hr/>
-
-
-        <h2>Commits By Top Directories</h2>
-        Shows commits by the first two directories of the project to visualize what was worked on over time <br/>
-        <br/>
-            <h3>All Time:</h3>
-            <img src="git_datehistogram_two_dirs.png"></img><br/>
-            <h3>Last 30 Days:</h3>
-            <img src="git_datehistogram_two_dirs_30_days.png"></img><br/>
-        <hr/>
-
-        <h2>Commits By Top Author</h2>
-        Shows commits by the tops author to visualize who was working and when <br/>
-        <br/>
-            <h3>All Time:</h3>
-            <img src="git_datehistogram_author.png"></img><br/>
-            <h3>Last 30 Days:</h3>
-            <img src="git_datehistogram_author_30_days.png"></img><br/>
-        <hr/>
-
-        <h2>Top Commits</h2>
-            <h3>By Author:</h3>
-            Shows commits by author to show the top contributors <br/>
-            <br/>
-            <img src="git_histogram_author_commit_hash_unique_count.png"></img><br/>
-
-            <h3>By File:</h3>
-            Shows commits by file to show the busiest file <br/>
-            <br/>
-            <img src="git_histogram_file_abbr_commit_hash_unique_count.png"></img><br/>
-
-            <h3>By Directory:</h3>
-            Shows commits by parent directory to show the busiest parent directory <br/>
-            <br/>            
-            <img src="git_histogram_two_dirs_commit_hash_unique_count.png"></img><br/>
-        <hr/>
-
-        <h2>Hotspots</h2>
-            Shows hotspot files in the code that are: <br/>
-            <ul>
-                <li>complex as measured by file size</li>
-                <li>changing frequently as measured by the number of commits</li>
-                <li>recent having changed within 365 days</li>
-            </ul>
-
-            <pre>
-            {print_text}
-            </pre>
-            <h3>Possible High Bus Factor:</h3>
-            Show the number of unique authors per hotspot file in the last year. If a hotspot file only has one author for the last 365 day, it has a high "bus factor" if that person left the team.<br/>
-            <img src="git_histogram_bus_factor.png"></img><br/>
-
-    </body>
-</html>
-"""
-    with open("output/results.html", "w") as file:
-        file.write(html)
 
 
 def do_analysis(repo_name, csv_file, source_path):
@@ -362,16 +155,3 @@ def do_analysis(repo_name, csv_file, source_path):
 
     hotspot_data = determine_hotspot_data(file_commits, file_complexities, commit_ages)
     write_csv_result(repo_name, hotspot_data)
-
-#    print_text = format_hotspot_for_print(hotspot_data)
-#    print(print_text)
-
-#    print("📈 Creating graphs")
-#    create_charts(df, repo_name, hotspot_data)
-
-#    create_html_file(source_path, print_text)
-#    print("\n✅  Done!\n\n")
-
-
-#if __name__ == "__main__":
-#    do_analysis(sys.argv[1], sys.argv[2])

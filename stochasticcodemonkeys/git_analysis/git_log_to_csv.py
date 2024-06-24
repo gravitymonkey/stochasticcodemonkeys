@@ -1,6 +1,4 @@
-import argparse
 import re
-import sys
 from datetime import datetime
 
 
@@ -8,14 +6,14 @@ def create_csv(repo_name, filename, exclude_file_pattern, exclude_author_pattern
     print(f"exclude_author_pattern:{exclude_author_pattern}")
     print(f"🗓️  Reading git log: {filename}")
     git_log_text = ""
-    with open(filename, "r") as file:
+    with open(filename, "r", encoding="utf-8") as file:
         git_log_text = file.read()
 
     csv_data = process_git_log(
         git_log_text, exclude_file_pattern, exclude_author_pattern
     )
 
-    with open(f"output/{repo_name}.csv", "w") as file:
+    with open(f"output/{repo_name}.csv", "w", encoding="utf-8") as file:
         file.write(csv_data)
 
 
@@ -108,19 +106,3 @@ def include_author(author, exclude_author_pattern):
         return False
     return True
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "filename",
-        type=str,
-        help="filename of the csv logfile",
-    )
-    parser.add_argument(
-        "filename",
-        type=str,
-        help="filename of the csv logfile",
-    )
-    args = parser.parse_args()
-    print(args.accumulate(args.integers))
-    create_csv(args.file)

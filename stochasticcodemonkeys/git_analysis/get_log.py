@@ -21,12 +21,12 @@ def save_git_log(repo_name, repo_directory_path):
     try:
         result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True, cwd=repo_directory_path)
         output = result.stdout
+        # Write the output to the file
+        with open(output_file_path, "w", encoding="utf-8") as output_file:
+            output_file.write(output)
+    
+        return output_file_path
     except subprocess.CalledProcessError as e:
         output = e.output
     
-    # Write the output to the file
-    with open(output_file_path, "w") as output_file:
-        output_file.write(output)
-    
-    return output_file_path
 

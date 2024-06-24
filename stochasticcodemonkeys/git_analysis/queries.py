@@ -207,42 +207,6 @@ def run_hotspot_analysis(source_path):
     
     return determine_hotspot_data(file_commits, file_complexities, commit_ages)
     
-def create_bus_factor_chart(db_path, hotspots):
-    conn, cursor = _get_git_db_connection(db_path)
-    
-    top_hotspots = get_top_hotspots(hotspots)
-    hotspot_files = [f['file'] for f in top_hotspots]
-
-    query = '''
-    SELECT file, author, datetime(timestamp) as datetime
-    FROM commits
-    WHERE file IN ({})
-    '''.format(','.join('?' for _ in hotspot_files))
-    
-    cursor.execute(query, hotspot_files)
-    rows = cursor.fetchall()
-    
-    recent_date = datetime.now() - timedelta(days=365)
-    recent_data = [row for row in rows if row[1] != 'GitHub' and datetime.strptime(row[2], '%Y-%m-%d %H:%M:%S') >= recent_date]
-    
-    file_author_map = {}
-    for row in recent_data:
-        file, author, _ = row
-        if file not in file_author_map:
-            file_author_map[file] = set()
-        file_author_map[file].add(author)
-    
-    bus_factor_text = ""
-    for file, authors in file_author_map.items():
-        if len(authors) == 1:
-            bus_factor_text += f"{file:<50} - {list(authors)[0]}\n"
-    
-    if bus_factor_text != "":
-        print("\n🚌 Hotspots with a high bus factor:")
-        print(bus_factor_text)
-    
-    conn.close()
-
 def get_top_hotspots(hotspots):
     # Assuming hotspots is a list of FileInfo named tuples
     # This function should sort and return the top hotspots based on the score
